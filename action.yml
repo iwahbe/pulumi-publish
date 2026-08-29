@@ -79,14 +79,34 @@ runs:
         OUT: ${{ runner.temp }}/pulumi-publish/sdk
       run: "$GITHUB_ACTION_PATH/scripts/gen-sdk.sh"
 
-    # Installed after generation so the module cache can key off the
-    # generated go.mod.
+    # setup-go's own cache is off: it can only key off files inside the
+    # workspace, and the generated go.mod lives in runner.temp. The module
+    # cache is keyed and restored explicitly instead, touching nothing in
+    # the user's workspace.
     - name: Install Go
       if: inputs.mode == 'gen-sdk' && inputs.language == 'go'
       uses: actions/setup-go@v7
       with:
         go-version: stable
-        cache-dependency-path: ${{ runner.temp }}/pulumi-publish/sdk/go/go.mod
+        cache: false
+
+    - name: Key the Go module cache off the generated go.mod
+      if: inputs.mode == 'gen-sdk' && inputs.language == 'go'
+      id: gomod
+      shell: bash
+      env:
+        OUT: ${{ runner.temp }}/pulumi-publish/sdk
+      run: |
+        if [ -f "$OUT/go/go.mod" ]; then
+          echo "hash=$(sha256sum "$OUT/go/go.mod" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+        fi
+
+    - name: Restore the Go module cache
+      if: inputs.mode == 'gen-sdk' && inputs.language == 'go' && steps.gomod.outputs.hash
+      uses: actions/cache@v6
+      with:
+        path: ~/go/pkg/mod
+        key: pulumi-publish-gomod-${{ runner.os }}-${{ steps.gomod.outputs.hash }}
 
     - name: Tidy the Go SDK
       if: inputs.mode == 'gen-sdk' && inputs.language == 'go'

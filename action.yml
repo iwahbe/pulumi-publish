@@ -70,12 +70,6 @@ runs:
         name: schema
         path: ${{ runner.temp }}/pulumi-publish/schema
 
-    - name: Install Go
-      if: inputs.mode == 'gen-sdk' && inputs.language == 'go'
-      uses: actions/setup-go@v7
-      with:
-        go-version: stable
-
     - name: Generate SDK
       if: inputs.mode == 'gen-sdk'
       shell: bash
@@ -84,6 +78,25 @@ runs:
         SCHEMA: ${{ runner.temp }}/pulumi-publish/schema/schema.json
         OUT: ${{ runner.temp }}/pulumi-publish/sdk
       run: "$GITHUB_ACTION_PATH/scripts/gen-sdk.sh"
+
+    # Installed after generation so the module cache can key off the
+    # generated go.mod.
+    - name: Install Go
+      if: inputs.mode == 'gen-sdk' && inputs.language == 'go'
+      uses: actions/setup-go@v7
+      with:
+        go-version: stable
+        cache-dependency-path: ${{ runner.temp }}/pulumi-publish/sdk/go/go.mod
+
+    - name: Tidy the Go SDK
+      if: inputs.mode == 'gen-sdk' && inputs.language == 'go'
+      shell: bash
+      env:
+        OUT: ${{ runner.temp }}/pulumi-publish/sdk
+      run: |
+        if [ -f "$OUT/go/go.mod" ]; then
+          cd "$OUT/go" && go mod tidy
+        fi
 
     - name: Upload SDK artifact
       if: inputs.mode == 'gen-sdk'

@@ -19,11 +19,6 @@ command -v pulumi >/dev/null ||
 pulumi package gen-sdk "$SCHEMA" --language "$LANGUAGE" --out "$OUT"
 
 case "$LANGUAGE" in
-go)
-	if [ -f "$OUT/go/go.mod" ]; then
-		(cd "$OUT/go" && go mod tidy)
-	fi
-	;;
 dotnet)
 	# The generated .csproj packs logo.png as the NuGet package icon, and NuGet
 	# requires a raster image. Codegen fills logo.png with the schema's logoUrl

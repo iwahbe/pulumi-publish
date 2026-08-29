@@ -1,0 +1,88 @@
+{
+  "name": "hcl",
+  "displayName": "Any HCL Module",
+  "version": "0.16.1",
+  "description": "Instantiate a Terraform/OpenTofu module as a Pulumi component.",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/pulumi/pulumi-hcl",
+  "logoUrl": "https://raw.githubusercontent.com/pulumi/pulumi-hcl/master/assets/logo.svg",
+  "pluginDownloadURL": "github://api.github.com/pulumi/pulumi-hcl",
+  "publisher": "Pulumi",
+  "meta": {
+    "supportPack": true
+  },
+  "language": {
+    "csharp": {
+      "rootNamespace": "Pulumi"
+    },
+    "go": {
+      "importBasePath": "github.com/pulumi/pulumi-hcl/sdk/go/hcl",
+      "respectSchemaVersion": true
+    },
+    "nodejs": {
+      "packageName": "@pulumi/hcl"
+    },
+    "python": {
+      "packageName": "pulumi_hcl"
+    }
+  },
+  "config": {},
+  "resources": {
+    "hcl:index:Module": {
+      "description": "A Terraform/OpenTofu module instantiated as a component resource.",
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "pulumi.json#/Any"
+          },
+          "description": "The module's input variables, keyed by variable name."
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "pulumi.json#/Any"
+          },
+          "description": "The module's output values, keyed by output name."
+        },
+        "source": {
+          "type": "string",
+          "plain": true,
+          "description": "The module source address (a registry reference, URL, or local path)."
+        },
+        "version": {
+          "type": "string",
+          "plain": true,
+          "description": "An optional version constraint, used when source is a registry module reference."
+        }
+      },
+      "type": "object",
+      "required": [
+        "outputs"
+      ],
+      "inputProperties": {
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "pulumi.json#/Any"
+          },
+          "description": "The module's input variables, keyed by variable name."
+        },
+        "source": {
+          "type": "string",
+          "plain": true,
+          "description": "The module source address (a registry reference, URL, or local path)."
+        },
+        "version": {
+          "type": "string",
+          "plain": true,
+          "description": "An optional version constraint, used when source is a registry module reference."
+        }
+      },
+      "requiredInputs": [
+        "source"
+      ],
+      "isComponent": true
+    }
+  }
+}

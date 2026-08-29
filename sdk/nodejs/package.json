@@ -1,0 +1,22 @@
+{
+    "name": "@pulumi/hcl",
+    "version": "0.16.1",
+    "repository": "https://github.com/pulumi/pulumi-hcl",
+    "license": "Apache-2.0",
+    "scripts": {
+        "build": "tsc"
+    },
+    "dependencies": {
+        "@pulumi/pulumi": "^3.142.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20",
+        "typescript": "^4.7.0"
+    },
+    "pulumi": {
+        "resource": true,
+        "name": "hcl",
+        "version": "0.16.1",
+        "server": "github://api.github.com/pulumi/pulumi-hcl"
+    }
+}

@@ -1,0 +1,108 @@
+name: Publish artifacts
+
+on:
+  workflow_call:
+    inputs:
+      provider-artifact:
+        description: Name of an already-uploaded artifact containing the provider binary.
+        type: string
+        required: true
+      provider-binary:
+        description: File name of the provider binary inside the artifact.
+        type: string
+        required: true
+      branch:
+        description: The artifacts branch to commit to.
+        type: string
+        default: pulumi-artifacts
+      languages:
+        description: JSON array of SDK languages to generate.
+        type: string
+        default: '["go","nodejs","python","dotnet","java"]'
+      pulumi-version:
+        description: Pulumi CLI version to install.
+        type: string
+        default: latest
+    outputs:
+      commit:
+        description: The artifacts-branch commit SHA.
+        value: ${{ jobs.commit.outputs.commit }}
+
+# Each job checks out iwahbe/pulumi-publish at job.workflow_sha — the commit
+# the caller's pin of this workflow resolved to — and runs the action from
+# that checkout, so the action version is always the workflow's own.
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      # An empty sha would silently check out the default branch instead of
+      # the pinned version; fail loudly instead.
+      - name: Assert the workflow knows its own commit
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: test -n "$WORKFLOW_SHA"
+      - uses: actions/checkout@v7
+        with:
+          repository: iwahbe/pulumi-publish
+          ref: ${{ job.workflow_sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.provider-artifact }}
+          path: ${{ runner.temp }}/provider
+      # Artifacts do not preserve file permissions.
+      - name: Make the provider executable
+        env:
+          PROVIDER: ${{ runner.temp }}/provider/${{ inputs.provider-binary }}
+        run: chmod +x "$PROVIDER"
+      - uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+        with:
+          pulumi-version: ${{ inputs.pulumi-version }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: ./
+        with:
+          mode: schema
+          provider-path: ${{ runner.temp }}/provider/${{ inputs.provider-binary }}
+
+  gen-sdk:
+    needs: schema
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: ${{ fromJSON(inputs.languages) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: iwahbe/pulumi-publish
+          ref: ${{ job.workflow_sha }}
+      - uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+        with:
+          pulumi-version: ${{ inputs.pulumi-version }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: ./
+        with:
+          mode: gen-sdk
+          language: ${{ matrix.language }}
+
+  commit:
+    needs: gen-sdk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.publish.outputs.commit }}
+    steps:
+      # The caller's repository at the workspace root (commit mode pushes to
+      # it); the action beside it in an untracked directory.
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: iwahbe/pulumi-publish
+          ref: ${{ job.workflow_sha }}
+          path: .pulumi-publish
+      - uses: ./.pulumi-publish
+        id: publish
+        with:
+          mode: commit
+          branch: ${{ inputs.branch }}

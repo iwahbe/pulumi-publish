@@ -1,0 +1,60 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # Stand in for a provider repo's build job: fetch a released provider binary
+  # and upload it as an artifact. pulumi-hcl embeds a version and an SVG
+  # logoUrl, so it exercises the schema validation and the dotnet logo
+  # conversion.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the pulumi-hcl provider
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo pulumi/pulumi-hcl \
+            --pattern 'pulumi-resource-hcl-v*-linux-amd64.tar.gz' \
+            --output "$RUNNER_TEMP/provider.tar.gz"
+          tar -xzf "$RUNNER_TEMP/provider.tar.gz" -C "$RUNNER_TEMP" pulumi-resource-hcl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: provider
+          path: ${{ runner.temp }}/pulumi-resource-hcl
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+    with:
+      provider-artifact: provider
+      provider-binary: pulumi-resource-hcl
+
+  dump:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./
+        id: dump
+        with:
+          mode: dump
+          path: ${{ runner.temp }}/prebuilt
+      - name: Verify the dumped tree matches what publish recorded
+        env:
+          GOT: ${{ steps.dump.outputs.commit }}
+          WANT: ${{ needs.publish.outputs.commit }}
+          PREBUILT: ${{ runner.temp }}/prebuilt
+        run: |
+          test -n "$WANT"
+          test "$GOT" = "$WANT"
+          test -f "$PREBUILT/schema.json"
+          for language in go nodejs python dotnet java; do
+            test -d "$PREBUILT/sdk/$language"
+          done

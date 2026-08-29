@@ -1,0 +1,129 @@
+name: pulumi-publish
+description: >-
+  Generate, store, and retrieve per-commit Pulumi package artifacts (schema and
+  SDKs) on a dedicated git branch.
+
+inputs:
+  mode:
+    description: "One of: schema, gen-sdk, commit, dump."
+    required: true
+  provider-path:
+    description: "schema mode: path to the built provider binary."
+    required: false
+  language:
+    description: "gen-sdk mode: one of go, nodejs, python, dotnet, java."
+    required: false
+  branch:
+    description: "commit and dump modes: the artifacts branch."
+    required: false
+    default: pulumi-artifacts
+  ref:
+    description: "dump mode: committish on the default branch to look up."
+    required: false
+    default: ${{ github.sha }}
+  path:
+    description: "dump mode: if set, check the artifacts tree out into this directory."
+    required: false
+
+outputs:
+  commit:
+    description: The artifacts-branch commit SHA (commit and dump modes).
+    value: ${{ steps.commit.outputs.commit || steps.dump.outputs.commit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate mode
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+      run: |
+        case "$MODE" in
+          schema|gen-sdk|commit|dump) ;;
+          *)
+            echo "::error::invalid mode '$MODE'; expected schema, gen-sdk, commit, or dump"
+            exit 1
+            ;;
+        esac
+
+    - name: Generate schema
+      if: inputs.mode == 'schema'
+      shell: bash
+      env:
+        PROVIDER_PATH: ${{ inputs.provider-path }}
+        OUT: ${{ runner.temp }}/pulumi-publish/schema
+      run: "$GITHUB_ACTION_PATH/scripts/schema.sh"
+
+    - name: Upload schema artifact
+      if: inputs.mode == 'schema'
+      uses: actions/upload-artifact@v7
+      with:
+        name: schema
+        path: ${{ runner.temp }}/pulumi-publish/schema/schema.json
+        if-no-files-found: error
+        overwrite: true
+
+    - name: Download schema artifact
+      if: inputs.mode == 'gen-sdk'
+      uses: actions/download-artifact@v8
+      with:
+        name: schema
+        path: ${{ runner.temp }}/pulumi-publish/schema
+
+    - name: Install Go
+      if: inputs.mode == 'gen-sdk' && inputs.language == 'go'
+      uses: actions/setup-go@v7
+      with:
+        go-version: stable
+
+    - name: Generate SDK
+      if: inputs.mode == 'gen-sdk'
+      shell: bash
+      env:
+        LANGUAGE: ${{ inputs.language }}
+        SCHEMA: ${{ runner.temp }}/pulumi-publish/schema/schema.json
+        OUT: ${{ runner.temp }}/pulumi-publish/sdk
+      run: "$GITHUB_ACTION_PATH/scripts/gen-sdk.sh"
+
+    - name: Upload SDK artifact
+      if: inputs.mode == 'gen-sdk'
+      uses: actions/upload-artifact@v7
+      with:
+        name: sdk-${{ inputs.language }}
+        path: ${{ runner.temp }}/pulumi-publish/sdk/${{ inputs.language }}
+        if-no-files-found: error
+        include-hidden-files: true
+        overwrite: true
+
+    - name: Stage schema artifact
+      if: inputs.mode == 'commit'
+      uses: actions/download-artifact@v8
+      with:
+        name: schema
+        path: ${{ runner.temp }}/pulumi-publish/stage
+
+    - name: Stage SDK artifacts
+      if: inputs.mode == 'commit'
+      uses: actions/download-artifact@v8
+      with:
+        pattern: sdk-*
+        path: ${{ runner.temp }}/pulumi-publish/stage/sdk
+
+    - name: Commit artifacts
+      if: inputs.mode == 'commit'
+      id: commit
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        STAGE: ${{ runner.temp }}/pulumi-publish/stage
+      run: "$GITHUB_ACTION_PATH/scripts/commit.sh"
+
+    - name: Dump artifacts commit
+      if: inputs.mode == 'dump'
+      id: dump
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        REF: ${{ inputs.ref }}
+        DEST: ${{ inputs.path }}
+      run: "$GITHUB_ACTION_PATH/scripts/dump.sh"

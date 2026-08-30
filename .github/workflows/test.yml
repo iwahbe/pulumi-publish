@@ -67,6 +67,22 @@ jobs:
             test -d "$PREBUILT/sdk/$language"
           done
 
+  # A never-skipped aggregate for branch protection: skipped jobs satisfy
+  # required checks, so requiring dump directly would fail open when an
+  # upstream job breaks. Require this job instead.
+  ok:
+    needs: [build, publish, dump]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every needed job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            test "$result" = success
+          done
+
   cleanup:
     needs: [publish, dump]
     if: always() && github.event_name == 'pull_request'

@@ -3,8 +3,14 @@ name: Test
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
+# Pushes to main exercise (and populate) the real pulumi-artifacts branch.
+# PR runs get a disposable per-run branch instead, deleted by the cleanup
+# job, so they exercise the full pipeline — including orphan-branch
+# creation — without touching real artifacts. Fork PRs fail at the commit
+# job (read-only token); PRs from this repo are the supported case.
 jobs:
   # Stand in for a provider repo's build job: fetch a released provider binary
   # and upload it as an artifact. pulumi-hcl embeds a version and an SVG
@@ -35,6 +41,7 @@ jobs:
     with:
       provider-artifact: provider
       provider-binary: pulumi-resource-hcl
+      branch: ${{ github.event_name == 'pull_request' && format('test-artifacts-{0}', github.run_id) || 'pulumi-artifacts' }}
 
   dump:
     needs: publish
@@ -45,6 +52,7 @@ jobs:
         id: dump
         with:
           mode: dump
+          branch: ${{ github.event_name == 'pull_request' && format('test-artifacts-{0}', github.run_id) || 'pulumi-artifacts' }}
           path: ${{ runner.temp }}/prebuilt
       - name: Verify the dumped tree matches what publish recorded
         env:
@@ -57,4 +65,38 @@ jobs:
           test -f "$PREBUILT/schema.json"
           for language in go nodejs python dotnet java; do
             test -d "$PREBUILT/sdk/$language"
+          done
+
+  # A never-skipped aggregate for branch protection: skipped jobs satisfy
+  # required checks, so requiring dump directly would fail open when an
+  # upstream job breaks. Require this job instead.
+  ok:
+    needs: [build, publish, dump]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every needed job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            test "$result" = success
+          done
+
+  cleanup:
+    needs: [publish, dump]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Delete the scratch branch and its notes
+        env:
+          BRANCH: test-artifacts-${{ github.run_id }}
+        run: |
+          for ref in "refs/heads/$BRANCH" "refs/notes/$BRANCH"; do
+            if git ls-remote --exit-code origin "$ref" >/dev/null; then
+              git push origin --delete "$ref"
+            fi
           done
